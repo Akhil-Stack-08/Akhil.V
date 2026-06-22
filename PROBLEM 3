@@ -1,0 +1,314 @@
+"""
+=============================================================
+  Interpolation Search on User-Defined Datasets
+  Uniform vs Non-Uniform Distribution Analysis
+=============================================================
+"""
+
+import time
+import random
+import math
+
+
+# ──────────────────────────────────────────────
+#  Core Algorithm
+# ──────────────────────────────────────────────
+
+def interpolation_search(arr, key):
+    """
+    Performs interpolation search on a sorted array.
+
+    Returns:
+        index   : position of key (-1 if not found)
+        probes  : number of comparisons made
+        steps   : list of (lo, hi, mid, arr[mid]) per probe
+    """
+    lo, hi = 0, len(arr) - 1
+    probes = 0
+    steps = []
+
+    while lo <= hi and key >= arr[lo] and key <= arr[hi]:
+        probes += 1
+
+        if lo == hi:
+            steps.append((lo, hi, lo, arr[lo]))
+            if arr[lo] == key:
+                return lo, probes, steps
+            break
+
+        # Interpolation formula
+        denom = arr[hi] - arr[lo]
+        if denom == 0:
+            pos = lo
+        else:
+            pos = lo + int(((key - arr[lo]) * (hi - lo)) / denom)
+        pos = max(lo, min(hi, pos))
+
+        steps.append((lo, hi, pos, arr[pos]))
+
+        if arr[pos] == key:
+            return pos, probes, steps
+        elif arr[pos] < key:
+            lo = pos + 1
+        else:
+            hi = pos - 1
+
+    return -1, probes, steps
+
+
+# ──────────────────────────────────────────────
+#  Dataset Generators
+# ──────────────────────────────────────────────
+
+def generate_uniform(n):
+    """Evenly spaced values: 10, 20, 30, ..."""
+    step = max(1, 1000 // n)
+    return [(i + 1) * step for i in range(n)]
+
+
+def generate_non_uniform(n):
+    """Random gap distribution — clusters and sparse regions."""
+    arr = []
+    v = 0
+    for _ in range(n):
+        v += random.randint(1, 200)
+        arr.append(v)
+    return arr
+
+
+# ──────────────────────────────────────────────
+#  Display Helpers
+# ──────────────────────────────────────────────
+
+BLUE   = "\033[94m"
+GREEN  = "\033[92m"
+YELLOW = "\033[93m"
+RED    = "\033[91m"
+CYAN   = "\033[96m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+RESET  = "\033[0m"
+
+def hdr(text):
+    width = 60
+    print(f"\n{BOLD}{CYAN}{'═' * width}{RESET}")
+    print(f"{BOLD}{CYAN}  {text}{RESET}")
+    print(f"{BOLD}{CYAN}{'═' * width}{RESET}")
+
+def section(text):
+    print(f"\n{BOLD}{BLUE}── {text} {'─' * (50 - len(text))}{RESET}")
+
+def success(text): print(f"  {GREEN}✔  {text}{RESET}")
+def warn(text):    print(f"  {YELLOW}⚠  {text}{RESET}")
+def error(text):   print(f"  {RED}✘  {text}{RESET}")
+def info(text):    print(f"  {DIM}{text}{RESET}")
+
+def print_array(arr, highlight=None):
+    """Print array with optional index highlighted."""
+    row_vals = ""
+    row_idxs = ""
+    for i, v in enumerate(arr):
+        cell = f"{v:>5}"
+        idx  = f"{i:>5}"
+        if highlight is not None and i == highlight:
+            row_vals += f"{GREEN}{BOLD}{cell}{RESET}"
+            row_idxs += f"{GREEN}{BOLD}{idx}{RESET}"
+        else:
+            row_vals += cell
+            row_idxs += f"{DIM}{idx}{RESET}"
+    print(f"  val: [{row_vals} ]")
+    print(f"  idx: [{row_idxs} ]")
+
+def print_steps(steps, arr):
+    """Print probe trace table."""
+    print(f"\n  {'Probe':>5}  {'lo':>4}  {'hi':>4}  {'mid':>4}  {'arr[mid]':>8}  Formula Position")
+    print(f"  {'─'*5}  {'─'*4}  {'─'*4}  {'─'*4}  {'─'*8}  {'─'*20}")
+    for i, (lo, hi, mid, val) in enumerate(steps, 1):
+        denom = arr[hi] - arr[lo] if hi < len(arr) else "?"
+        print(f"  {i:>5}  {lo:>4}  {hi:>4}  {YELLOW}{mid:>4}{RESET}  {val:>8}  lo + ⌊(key−arr[lo])×(hi−lo)/range⌋")
+
+
+# ──────────────────────────────────────────────
+#  Input Helpers
+# ──────────────────────────────────────────────
+
+def get_int(prompt, lo=None, hi=None):
+    while True:
+        try:
+            v = int(input(f"  {prompt}: ").strip())
+            if (lo is None or v >= lo) and (hi is None or v <= hi):
+                return v
+            print(f"  {RED}Please enter a value between {lo} and {hi}.{RESET}")
+        except ValueError:
+            print(f"  {RED}Invalid input. Enter an integer.{RESET}")
+
+def get_manual_array():
+    while True:
+        raw = input("  Enter numbers separated by spaces or commas:\n  > ").strip()
+        try:
+            nums = [int(x) for x in raw.replace(",", " ").split() if x]
+            if len(nums) < 2:
+                warn("Please enter at least 2 numbers.")
+                continue
+            nums.sort()
+            return nums
+        except ValueError:
+            error("Invalid input. Only integers allowed.")
+
+
+# ──────────────────────────────────────────────
+#  Single Search Session
+# ──────────────────────────────────────────────
+
+def run_search_session(dist_label):
+    section(f"Dataset Setup  [{dist_label}]")
+
+    # Input method
+    print(f"\n  How would you like to provide the dataset?")
+    print(f"  {BOLD}1{RESET}. Enter values manually")
+    print(f"  {BOLD}2{RESET}. Generate randomly")
+    choice = get_int("Choose (1/2)", 1, 2)
+
+    if choice == 1:
+        arr = get_manual_array()
+    else:
+        n = get_int("How many elements to generate? (5–50)", 5, 50)
+        if dist_label == "Uniform":
+            arr = generate_uniform(n)
+        else:
+            arr = generate_non_uniform(n)
+        print(f"\n  {GREEN}Generated {dist_label} dataset ({n} elements):{RESET}")
+
+    section("Your Dataset")
+    print_array(arr)
+    info(f"Size: {len(arr)}   Min: {arr[0]}   Max: {arr[-1]}")
+
+    # Search key
+    section("Search")
+    key = get_int("Enter the search key")
+
+    # Run search
+    t0 = time.perf_counter()
+    index, probes, steps = interpolation_search(arr, key)
+    t1 = time.perf_counter()
+    exec_us = (t1 - t0) * 1_000_000   # microseconds
+
+    # Results
+    section("Results")
+    if index != -1:
+        success(f"Key {BOLD}{key}{RESET}{GREEN} FOUND at index {BOLD}{index}{RESET}")
+        print_array(arr, highlight=index)
+    else:
+        error(f"Key {key} NOT FOUND in the dataset.")
+
+    print(f"\n  {'Metric':<22} {'Value':>12}")
+    print(f"  {'─'*22} {'─'*12}")
+    print(f"  {'Status':<22} {(GREEN+'Found'+RESET) if index != -1 else (RED+'Not Found'+RESET):>20}")
+    print(f"  {'Index':<22} {str(index):>12}")
+    print(f"  {'Probes / Comparisons':<22} {probes:>12}")
+    print(f"  {'Execution Time':<22} {exec_us:>10.3f} μs")
+
+    # Probe trace
+    print()
+    show = input(f"  Show step-by-step probe trace? (y/n): ").strip().lower()
+    if show == "y":
+        section("Probe Trace")
+        print_steps(steps, arr)
+
+    return {
+        "distribution": dist_label,
+        "size": len(arr),
+        "key": key,
+        "found": index != -1,
+        "index": index,
+        "probes": probes,
+        "time_us": exec_us,
+    }
+
+
+# ──────────────────────────────────────────────
+#  Comparison Table
+# ──────────────────────────────────────────────
+
+def print_comparison(results):
+    hdr("Performance Comparison")
+    print(f"\n  {'#':>2}  {'Distribution':<14} {'Key':>6}  {'Size':>5}  {'Probes':>6}  {'Found':>6}  {'Time (μs)':>10}")
+    print(f"  {'─'*2}  {'─'*14} {'─'*6}  {'─'*5}  {'─'*6}  {'─'*6}  {'─'*10}")
+
+    for i, r in enumerate(results, 1):
+        found_str = f"{GREEN}Yes{RESET}" if r["found"] else f"{RED}No{RESET}"
+        dist_col  = f"{BLUE}{r['distribution']}{RESET}" if r["distribution"] == "Uniform" else f"{YELLOW}{r['distribution']}{RESET}"
+        print(f"  {i:>2}  {dist_col:<23} {r['key']:>6}  {r['size']:>5}  {r['probes']:>6}  {found_str:>14}  {r['time_us']:>10.3f}")
+
+    # Summary analysis
+    uniform_res     = [r for r in results if r["distribution"] == "Uniform"]
+    nonuniform_res  = [r for r in results if r["distribution"] == "Non-Uniform"]
+
+    if uniform_res and nonuniform_res:
+        avg_u = sum(r["probes"] for r in uniform_res) / len(uniform_res)
+        avg_n = sum(r["probes"] for r in nonuniform_res) / len(nonuniform_res)
+
+        section("Analysis Summary")
+        print(f"  Avg probes  — {BLUE}Uniform{RESET}:     {avg_u:.1f}")
+        print(f"  Avg probes  — {YELLOW}Non-Uniform{RESET}: {avg_n:.1f}")
+        print()
+        if avg_u < avg_n:
+            success("Uniform data needed fewer probes — interpolation search excels here.")
+            info("  On uniformly distributed data, interpolation search achieves O(log log n).")
+            info("  On non-uniform data, gaps between values mislead the formula → more probes.")
+        elif avg_u == avg_n:
+            info("Similar probe counts. Try more diverse keys for a clearer trend.")
+        else:
+            warn("Non-uniform data performed better in this sample.")
+            info("  This can happen with small datasets or lucky key placement.")
+
+    print(f"\n  {DIM}Complexity Reference:{RESET}")
+    print(f"  {GREEN}Uniform best/avg  →  O(log log n){RESET}")
+    print(f"  {RED}Non-uniform worst →  O(n){RESET}")
+    print(f"  {DIM}Binary search always →  O(log n){RESET}")
+
+
+# ──────────────────────────────────────────────
+#  Main Menu
+# ──────────────────────────────────────────────
+
+def main():
+    hdr("Interpolation Search — Dataset Analysis")
+    print(f"\n  {DIM}Study how search performance varies with data distribution.{RESET}")
+
+    results = []
+
+    while True:
+        print(f"\n  {BOLD}MENU{RESET}")
+        print(f"  {BOLD}1{RESET}. Search on Uniform dataset")
+        print(f"  {BOLD}2{RESET}. Search on Non-Uniform dataset")
+        print(f"  {BOLD}3{RESET}. Show comparison table")
+        print(f"  {BOLD}4{RESET}. Exit")
+
+        choice = get_int("Choose option (1–4)", 1, 4)
+
+        if choice == 1:
+            result = run_search_session("Uniform")
+            results.append(result)
+            print(f"\n  {DIM}Result saved. Total sessions: {len(results)}{RESET}")
+
+        elif choice == 2:
+            result = run_search_session("Non-Uniform")
+            results.append(result)
+            print(f"\n  {DIM}Result saved. Total sessions: {len(results)}{RESET}")
+
+        elif choice == 3:
+            if not results:
+                warn("No searches run yet. Run at least one search first.")
+            else:
+                print_comparison(results)
+
+        elif choice == 4:
+            if results:
+                print_comparison(results)
+            print(f"\n  {GREEN}Goodbye!{RESET}\n")
+            break
+
+
+if __name__ == "__main__":
+    main()
